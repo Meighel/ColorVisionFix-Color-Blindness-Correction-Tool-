@@ -139,22 +139,52 @@ class CVDSimulatorGUI:
         return sim_rgb
     
     def daltonize(self, image, deficiency_type):
-        normal = image.astype(np.float32)/255.0
-        if deficiency_type=="universal":
-            LMS_prot = self._simulate_cvd_lms(image,'protanopia')
-            LMS_deut = self._simulate_cvd_lms(image,'deuteranopia')
-            err_prot = normal - LMS_prot
-            err_deut = normal - LMS_deut
-            universal_error = 0.6*err_prot + 0.4*err_deut
-            correction_matrix = np.array([[0,0,0],[0,0,0],[0.7,0.7,1]])
+        normal = image.astype(np.float32) / 255.0
+
+        # LMS matrices for simulation
+        rgb2lms = np.array([
+            [0.31399022, 0.63951294, 0.04649755],
+            [0.15537241, 0.75789446, 0.08670142],
+            [0.01775239, 0.10944209, 0.87256922]
+        ])
+        lms2rgb = np.linalg.inv(rgb2lms)
+
+        LMS = normal @ rgb2lms.T
+
+        protan_loss = np.array([[0,1.05118294,-0.05116099]]*3)
+        deutan_loss = np.array([[1,0,0],[0.9513092,0,0.04866992],[0.9513092,0,0.04866992]])
+
+        if deficiency_type == "universal":
+            # Simulate protanopia & deuteranopia
+            LMS_prot = np.clip(LMS @ protan_loss.T, 0, 1)
+            LMS_deut = np.clip(LMS @ deutan_loss.T, 0, 1)
+
+            sim_prot = LMS_prot @ lms2rgb.T
+            sim_deut = LMS_deut @ lms2rgb.T
+
+            # Compute errors
+            err_prot = normal - sim_prot
+            err_deut = normal - sim_deut
+            universal_error = 0.6 * err_prot + 0.4 * err_deut
+
+            # Redistribute lost red/green into visible channels
+            correction_matrix = np.array([
+                [0.5, 0.5, 0.0],  # Red receives half of red+green error
+                [0.5, 0.5, 0.0],  # Green receives half of red+green error
+                [0.3, 0.3, 1.0]   # Blue receives partial red+green + its own
+            ])
             shifted = universal_error @ correction_matrix.T
             corrected = normal + shifted * self.correction_strength.get()
+
         else:
+            # Regular per-type daltonization
             simulated = self.simulate_cvd(image, deficiency_type).astype(np.float32)/255.0
             error = normal - simulated
             corrected = normal + error * self.correction_strength.get()
-        corrected = np.clip(corrected,0,1)
-        return (corrected*255).astype(np.uint8)
+
+        corrected = np.clip(corrected, 0, 1)
+        return (corrected * 255).astype(np.uint8)
+
     
     def enhance_contrast(self,image):
         img_yuv = cv2.cvtColor(image,cv2.COLOR_RGB2YUV)
