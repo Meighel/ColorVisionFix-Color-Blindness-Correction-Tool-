@@ -9,9 +9,9 @@ class CVDSimulatorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Color Vision Deficiency Simulator")
-        self.root.geometry("1200x700")  # wider to fit 5 images
+        self.root.geometry("1200x600")
 
-        # Accurate Machado-based CVD simulation matrices (RGB fallback)
+        # Machado-based RGB simulation matrices
         self.cvd_matrices = {
             'protanopia': np.array([
                 [0.152286, 1.052583, -0.204868],
@@ -30,273 +30,251 @@ class CVDSimulatorGUI:
         self.cvd_type = tk.StringVar(value='protanopia')
         self.correction_strength = tk.DoubleVar(value=0.6)
 
-        # Create GUI
         self.create_widgets()
 
+    # ------------------------- UI SETUP -------------------------
     def create_widgets(self):
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         control_frame = ttk.LabelFrame(main_frame, text="Controls", padding="10")
-        control_frame.pack(fill=tk.X, pady=(0, 10))
+        control_frame.pack(fill=tk.X)
 
-        ttk.Button(control_frame, text="Load Image", command=self.load_image).pack(side=tk.LEFT, padx=(0, 20))
+        ttk.Button(control_frame, text="Load Image",
+                   command=self.load_image).pack(side=tk.LEFT, padx=10)
 
-        ttk.Label(control_frame, text="CVD Type:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(control_frame, text="CVD Type:").pack(side=tk.LEFT)
         cvd_frame = ttk.Frame(control_frame)
-        cvd_frame.pack(side=tk.LEFT, padx=(0, 20))
+        cvd_frame.pack(side=tk.LEFT, padx=10)
 
-        ttk.Radiobutton(cvd_frame, text="Protanopia (Red-blind)", variable=self.cvd_type,
-                        value='protanopia', command=self.process_current_image).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Radiobutton(cvd_frame, text="Deuteranopia (Green-blind)", variable=self.cvd_type,
-                        value='deuteranopia', command=self.process_current_image).pack(side=tk.LEFT)
-        ttk.Radiobutton(cvd_frame, text="Universal Red-Green", variable=self.cvd_type,
-                        value='universal', command=self.process_current_image).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Radiobutton(cvd_frame, text="Protanopia",
+                        variable=self.cvd_type, value='protanopia',
+                        command=self.process_current_image).pack(side=tk.LEFT)
 
-        strength_frame = ttk.Frame(control_frame)
-        strength_frame.pack(side=tk.LEFT, padx=(0, 20))
-        ttk.Label(strength_frame, text="Correction Strength:").pack(side=tk.LEFT, padx=(0, 5))
-        strength_scale = ttk.Scale(strength_frame, from_=0.0, to=1.0, variable=self.correction_strength,
-                                   length=150, command=self.on_strength_change)
-        strength_scale.pack(side=tk.LEFT, padx=(0, 5))
-        self.strength_label = ttk.Label(strength_frame, text="0.6")
+        ttk.Radiobutton(cvd_frame, text="Deuteranopia",
+                        variable=self.cvd_type, value='deuteranopia',
+                        command=self.process_current_image).pack(side=tk.LEFT)
+
+        ttk.Radiobutton(cvd_frame, text="Universal",
+                        variable=self.cvd_type, value='universal',
+                        command=self.process_current_image).pack(side=tk.LEFT)
+
+        ttk.Label(control_frame, text="Strength:").pack(side=tk.LEFT, padx=5)
+        strength_scale = ttk.Scale(control_frame, from_=0, to=1,
+                                   variable=self.correction_strength,
+                                   length=150,
+                                   command=self.on_strength_change)
+        strength_scale.pack(side=tk.LEFT)
+        self.strength_label = ttk.Label(control_frame, text="0.6")
         self.strength_label.pack(side=tk.LEFT)
 
-        ttk.Button(control_frame, text="Process Image", command=self.process_current_image).pack(side=tk.LEFT, padx=(20, 0))
+        ttk.Button(control_frame, text="Process",
+                   command=self.process_current_image).pack(side=tk.LEFT, padx=20)
 
-        # Image display frame
+        # ----------------- IMAGE DISPLAY -----------------
         image_frame = ttk.Frame(main_frame)
-        image_frame.pack(fill=tk.BOTH, expand=True)
-        self.image_frames = {}
+        image_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+
         self.image_labels = {}
         titles = [
-            ('Original', 'original'),
-            ('Simulated CVD (Uncorrected)', 'simulated_cvd'),
-            ('Daltonized', 'daltonized'),
-            ('Enhanced & Filtered', 'enhanced_and_filtered'),
-            ('Simulated CVD (Corrected + Enhanced)', 'simulated_view')
+            ("Original", "original"),
+            ("Simulated CVD (Uncorrected)", "simulated_cvd"),
+            ("Daltonized (Corrected)", "daltonized"),
+            ("Simulated CVD (Corrected)", "simulated_view")
         ]
+
+        BOX_W = 250
+        BOX_H = 250
+
         for i, (title, key) in enumerate(titles):
-            frame = ttk.LabelFrame(image_frame, text=title, padding="5")
-            frame.grid(row=0, column=i, padx=5, pady=5, sticky="nsew")
-            label = ttk.Label(frame, text="No image loaded", anchor="center")
-            label.pack(expand=True, fill=tk.BOTH)
-            self.image_frames[key] = frame
-            self.image_labels[key] = label
+            frame = ttk.LabelFrame(image_frame, text=title)
+            frame.grid(row=0, column=i, padx=5, sticky="nsew")
+            lbl = tk.Label(frame, text="No Image", bg="#f0f0f0", width=BOX_W, height=BOX_H, anchor="center")
+            lbl.pack(expand=True, fill=tk.BOTH)
+            self.image_labels[key] = lbl
 
         for i in range(len(titles)):
             image_frame.columnconfigure(i, weight=1)
+        
         image_frame.rowconfigure(0, weight=1)
 
-        stats_frame = ttk.LabelFrame(main_frame, text="Statistics", padding="10")
-        stats_frame.pack(fill=tk.X, pady=(10, 0))
-        self.stats_text = tk.Text(stats_frame, height=3, wrap=tk.WORD)
+
+        # Statistics box
+        stats_frame = ttk.LabelFrame(main_frame, text="Statistics")
+        stats_frame.pack(fill=tk.X, pady=10)
+        self.stats_text = tk.Text(stats_frame, height=4)
         self.stats_text.pack(fill=tk.X)
 
-        save_frame = ttk.Frame(main_frame)
-        save_frame.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(save_frame, text="Save Results", command=self.save_results).pack(side=tk.RIGHT)
+        # Save button
+        ttk.Button(main_frame, text="Save Results",
+                   command=self.save_results).pack(anchor="e")
 
-    # --- Image handling ---
+    # ------------------------- FILE LOADING -------------------------
     def load_image(self):
-        file_path = filedialog.askopenfilename(
-            title="Select Image File",
-            filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp *.tiff *.tif"),
-                       ("All files", "*.*")]
-        )
-        if file_path:
-            try:
-                img = cv2.imread(file_path)
-                if img is None:
-                    messagebox.showerror("Error", "Could not load the image file.")
-                    return
-                self.original_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                self.display_image(self.original_image, 'original')
-                self.process_current_image()
-            except Exception as e:
-                messagebox.showerror("Error", f"Error loading image: {str(e)}")
+        path = filedialog.askopenfilename(
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.tiff")])
+        if not path:
+            return
 
-    # --- RGB-based CVD simulation using Machado matrices ---
-    def simulate_cvd(self, image, deficiency_type):
-        matrix = self.cvd_matrices[deficiency_type]
-        img = image.astype(np.float32)/255.0
-        transformed = np.dot(img, matrix.T)
-        transformed = np.clip(transformed, 0, 1)
-        return (transformed*255).astype(np.uint8)
+        img = cv2.imread(path)
+        if img is None:
+            messagebox.showerror("Error", "Failed to load image.")
+            return
 
-    # --- LMS-based CVD simulation for universal ---
+        self.original_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        self.display_image(self.original_image, "original")
+        self.process_current_image()
+
+    # ------------------------- SIMULATION -------------------------
+    def simulate_cvd(self, image, deficiency):
+        matrix = self.cvd_matrices[deficiency]
+        img = image.astype(np.float32) / 255
+        result = np.dot(img, matrix.T)
+        return np.clip(result * 255, 0, 255).astype(np.uint8)
+
+    # LMS system for universal simulation
     def _simulate_cvd_lms(self, image, deficiency):
-        """Input: float32 in [0,1], output: float32 in [0,1]"""
         rgb2lms = np.array([
             [0.31399022, 0.63951294, 0.04649755],
             [0.15537241, 0.75789446, 0.08670142],
             [0.01775239, 0.10944209, 0.87256922]
         ])
         lms2rgb = np.linalg.inv(rgb2lms)
+
         LMS = image @ rgb2lms.T
-        protan_loss = np.array([[0,1.05118294,-0.05116099]]*3)
-        deutan_loss = np.array([[1,0,0],[0.9513092,0,0.04866992],[0.9513092,0,0.04866992]])
 
-        if deficiency=='protanopia':
-            LMS_sim = LMS @ protan_loss.T
-        elif deficiency=='deuteranopia':
-            LMS_sim = LMS @ deutan_loss.T
+        prot_loss = np.array([[0, 1.05118294, -0.05116099]] * 3)
+        deut_loss = np.array([[1, 0, 0],
+                              [0.9513092, 0, 0.04866992],
+                              [0.9513092, 0, 0.04866992]])
+
+        if deficiency == "protanopia":
+            LMS_sim = LMS @ prot_loss.T
         else:
-            raise ValueError("Unsupported deficiency")
-        sim_rgb = np.clip(LMS_sim @ lms2rgb.T, 0, 1)
-        return sim_rgb
+            LMS_sim = LMS @ deut_loss.T
 
-    # --- Daltonization ---
-    def daltonize(self, image, deficiency_type):
-        normal = image.astype(np.float32)/255
-        rgb2lms = np.array([
-            [0.31399022, 0.63951294, 0.04649755],
-            [0.15537241, 0.75789446, 0.08670142],
-            [0.01775239, 0.10944209, 0.87256922]
-        ])
-        lms2rgb = np.linalg.inv(rgb2lms)
-        LMS = normal @ rgb2lms.T
-        protan_loss = np.array([[0,1.05118294,-0.05116099]]*3)
-        deutan_loss = np.array([[1,0,0],[0.9513092,0,0.04866992],[0.9513092,0,0.04866992]])
+        return np.clip(LMS_sim @ lms2rgb.T, 0, 1)
 
-        if deficiency_type == "universal":
-            LMS_prot = np.clip(LMS @ protan_loss.T, 0, 1)
-            LMS_deut = np.clip(LMS @ deutan_loss.T, 0, 1)
-            sim_prot = LMS_prot @ lms2rgb.T
-            sim_deut = LMS_deut @ lms2rgb.T
-            err_prot = normal - sim_prot
-            err_deut = normal - sim_deut
-            universal_error = 0.6*err_prot + 0.4*err_deut
-            correction_matrix = np.array([[0.5,0.5,0],[0.5,0.5,0],[0.3,0.3,1]])
-            shifted = universal_error @ correction_matrix.T
-            corrected = normal + shifted * self.correction_strength.get()
+    # Daltonization
+    def daltonize(self, image, cvd_type):
+        normal = image.astype(np.float32) / 255
+
+        if cvd_type == "universal":
+            sim_p = self._simulate_cvd_lms(normal, "protanopia")
+            sim_d = self._simulate_cvd_lms(normal, "deuteranopia")
+            sim = (sim_p + sim_d) / 2
         else:
-            sim_rgb = self.simulate_cvd(image, deficiency_type).astype(np.float32)/255
-            error = normal - sim_rgb
-            corrected = normal + error * self.correction_strength.get()
-        corrected = np.clip(corrected, 0, 1)
-        return (corrected*255).astype(np.uint8)
+            sim = self.simulate_cvd(image, cvd_type).astype(np.float32) / 255
 
-    # --- Enhance and filter ---
-    def enhance_contrast(self,image):
-        img_yuv = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        img_yuv[:,:,0] = clahe.apply(img_yuv[:,:,0])
-        return cv2.cvtColor(img_yuv, cv2.COLOR_YUV2RGB)
+        error = normal - sim
+        corrected = np.clip(normal + error * self.correction_strength.get(), 0, 1)
+        return (corrected * 255).astype(np.uint8)
 
-    def apply_median_filter(self,image):
-        return cv2.medianBlur(image,3)
-
-    def compute_statistics(self,image,label):
-        mean = np.mean(image)
-        std_dev = np.std(image)
-        return f"{label} - Mean: {mean:.2f}, Std Dev: {std_dev:.2f}"
-
-    # --- Main processing ---
+    # ------------------------- MAIN PROCESSING -------------------------
     def process_current_image(self):
         if self.original_image is None:
-            messagebox.showwarning("Warning","Please load an image first.")
             return
+
         try:
             cvd_type = self.cvd_type.get()
-            original_float = self.original_image.astype(np.float32)/255
+            original = self.original_image
+            original_float = original.astype(np.float32) / 255
 
-            # --- Simulated CVD (Uncorrected) ---
+            # Simulated (uncorrected)
             if cvd_type == "universal":
-                sim_prot = self._simulate_cvd_lms(original_float,'protanopia')
-                sim_deut = self._simulate_cvd_lms(original_float,'deuteranopia')
-                simulated = ((sim_prot + sim_deut)/2*255).astype(np.uint8)
+                sim_p = self._simulate_cvd_lms(original_float, "protanopia")
+                sim_d = self._simulate_cvd_lms(original_float, "deuteranopia")
+                simulated = ((sim_p + sim_d) / 2 * 255).astype(np.uint8)
             else:
-                simulated = self.simulate_cvd(self.original_image, cvd_type)
+                simulated = self.simulate_cvd(original, cvd_type)
 
-            # --- Daltonized ---
-            corrected = self.daltonize(self.original_image, cvd_type)
+            # Daltonized (Correction)
+            daltonized = self.daltonize(original, cvd_type)
 
-            # --- Enhanced & Filtered ---
-            enhanced = self.enhance_contrast(corrected)
-            filtered = self.apply_median_filter(enhanced)
-
-            # --- Simulated CVD (Corrected + Enhanced) ---
+            # Simulated Corrected View
             if cvd_type == "universal":
-                filtered_float = filtered.astype(np.float32)/255
-                sim_prot_corr = self._simulate_cvd_lms(filtered_float,'protanopia')
-                sim_deut_corr = self._simulate_cvd_lms(filtered_float,'deuteranopia')
-                simulated_view = ((sim_prot_corr + sim_deut_corr)/2*255).astype(np.uint8)
+                d_float = daltonized.astype(np.float32) / 255
+                sim_p2 = self._simulate_cvd_lms(d_float, "protanopia")
+                sim_d2 = self._simulate_cvd_lms(d_float, "deuteranopia")
+                simulated_view = ((sim_p2 + sim_d2) / 2 * 255).astype(np.uint8)
             else:
-                simulated_view = self.simulate_cvd(filtered, cvd_type)
+                simulated_view = self.simulate_cvd(daltonized, cvd_type)
 
-            # --- Display ---
-            self.display_image(simulated,'simulated_cvd')
-            self.display_image(corrected,'daltonized')
-            self.display_image(filtered,'enhanced_and_filtered')
-            self.display_image(simulated_view,'simulated_view')
+            # Display
+            self.display_image(simulated, "simulated_cvd")
+            self.display_image(daltonized, "daltonized")
+            self.display_image(simulated_view, "simulated_view")
 
             # Stats
-            original_stats = self.compute_statistics(self.original_image,"Original Image")
-            filtered_stats = self.compute_statistics(filtered,"Enhanced Image")
-            self.stats_text.delete(1.0, tk.END)
-            self.stats_text.insert(tk.END,f"{original_stats}\n{filtered_stats}\n")
-            self.stats_text.insert(tk.END,f"CVD Type: {cvd_type.capitalize()}, Correction Strength: {self.correction_strength.get():.1f}")
+            self.update_stats(original, daltonized, cvd_type)
 
-            # Save internally
+            # Internal save
             self.processed_images = {
-                'original': self.original_image,
-                'simulated': simulated,
-                'corrected': corrected,
-                'enhanced': enhanced,
-                'filtered': filtered,
-                'simulated_view': simulated_view
+                "original": original,
+                "simulated": simulated,
+                "daltonized": daltonized,
+                "simulated_view": simulated_view
             }
 
         except Exception as e:
-            messagebox.showerror("Error",f"Error processing image: {str(e)}")
+            messagebox.showerror("Error", str(e))
 
-    # --- GUI helpers ---
-    def on_strength_change(self,value):
-        self.strength_label.config(text=f"{float(value):.1f}")
-        if self.original_image is None:
-            return
-        if hasattr(self,'_debounce_id'):
-            self.root.after_cancel(self._debounce_id)
-        self._debounce_id = self.root.after(180,self.process_current_image)
+    # ------------------------- STATS -------------------------
+    def compute_stats(self, img):
+        return np.mean(img), np.std(img)
 
-    def display_image(self,image,image_key):
-        height,width = image.shape[:2]
-        max_size = 200
-        if width>height:
-            new_width = max_size
-            new_height = int(height*max_size/width)
-        else:
-            new_height = max_size
-            new_width = int(width*max_size/height)
-        resized = cv2.resize(image,(new_width,new_height))
-        pil_image = Image.fromarray(resized)
-        photo = ImageTk.PhotoImage(pil_image)
-        label = self.image_labels[image_key]
-        label.config(image=photo,text="")
-        label.image = photo
+    def update_stats(self, original, daltonized, cvd_type):
+        m1, s1 = self.compute_stats(original)
+        m2, s2 = self.compute_stats(daltonized)
 
+        self.stats_text.delete(1.0, tk.END)
+        self.stats_text.insert(tk.END,
+                               f"Original - Mean: {m1:.2f}, StdDev: {s1:.2f}\n")
+        self.stats_text.insert(tk.END,
+                               f"Daltonized - Mean: {m2:.2f}, StdDev: {s2:.2f}\n")
+        self.stats_text.insert(tk.END,
+                               f"CVD Type: {cvd_type.capitalize()}, Strength: {self.correction_strength.get():.2f}")
+
+    # ------------------------- HELPERS -------------------------
+    def on_strength_change(self, value):
+        self.strength_label.config(text=f"{float(value):.2f}")
+        if self.original_image is not None:
+            if hasattr(self, "_debounce"):
+                self.root.after_cancel(self._debounce)
+            self._debounce = self.root.after(180, self.process_current_image)
+
+    def display_image(self, image, key):
+        h, w = image.shape[:2]
+        max_size = 220
+        scale = max_size / max(h, w)
+        resized = cv2.resize(image, (int(w * scale), int(h * scale)))
+        photo = ImageTk.PhotoImage(Image.fromarray(resized))
+
+        lbl = self.image_labels[key]
+        lbl.config(image=photo, text="", anchor="center")
+        lbl.image = photo
+
+    # ------------------------- SAVE -------------------------
     def save_results(self):
-        if not hasattr(self,'processed_images'):
-            messagebox.showwarning("Warning","No processed images to save.")
+        if not hasattr(self, "processed_images"):
+            messagebox.showwarning("Warning", "No processed images to save.")
             return
-        save_dir = filedialog.askdirectory(title="Select Directory to Save Results")
-        if save_dir:
-            try:
-                cvd_type = self.cvd_type.get()
-                cv2.imwrite(os.path.join(save_dir,'original.png'),cv2.cvtColor(self.original_image,cv2.COLOR_RGB2BGR))
-                cv2.imwrite(os.path.join(save_dir,f'simulated_uncorrected_{cvd_type}.png'),cv2.cvtColor(self.processed_images['simulated'],cv2.COLOR_RGB2BGR))
-                cv2.imwrite(os.path.join(save_dir,f'daltonized_{cvd_type}.png'),cv2.cvtColor(self.processed_images['corrected'],cv2.COLOR_RGB2BGR))
-                cv2.imwrite(os.path.join(save_dir,f'final_filtered_{cvd_type}.png'),cv2.cvtColor(self.processed_images['filtered'],cv2.COLOR_RGB2BGR))
-                cv2.imwrite(os.path.join(save_dir,f'simulated_corrected_{cvd_type}.png'),cv2.cvtColor(self.processed_images['simulated_view'],cv2.COLOR_RGB2BGR))
-                messagebox.showinfo("Success",f"Images saved to {save_dir}")
-            except Exception as e:
-                messagebox.showerror("Error",f"Error saving images: {str(e)}")
 
+        folder = filedialog.askdirectory()
+        if not folder:
+            return
+
+        for name, img in self.processed_images.items():
+            cv2.imwrite(os.path.join(folder, f"{name}.png"),
+                        cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
+        messagebox.showinfo("Saved", f"Saved to {folder}")
+
+# ------------------------- MAIN -------------------------
 def main():
     root = tk.Tk()
-    app = CVDSimulatorGUI(root)
+    CVDSimulatorGUI(root)
     root.mainloop()
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
