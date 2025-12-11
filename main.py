@@ -61,6 +61,10 @@ class CVDSimulatorGUI:
                        variable=self.cvd_type, value='deuteranopia',
                        command=self.process_current_image).pack(side=tk.LEFT)
         
+        ttk.Radiobutton(cvd_frame, text="Universal Red-Green", 
+                        variable=self.cvd_type, value='universal',
+                        command=self.process_current_image).pack(side=tk.LEFT, padx=(0, 10))
+        
         # Correction strength
         strength_frame = ttk.Frame(control_frame)
         strength_frame.pack(side=tk.LEFT, padx=(0, 20))
@@ -156,8 +160,23 @@ class CVDSimulatorGUI:
     
     def daltonize(self, image, deficiency_type):
         normal = image.astype(np.float32) / 255.0
-        simulated = self.simulate_cvd(image, deficiency_type).astype(np.float32) / 255.0
-        error = normal - simulated
+
+        if deficiency_type == 'universal':
+            #Simulate Both
+            sim_prot = self.simulate_cvd(image, 'protanopia').astype(np.float32) / 255.0
+            sim_deut = self.simulate_cvd(image, 'deuteranopia').astype(np.float32) / 255.0
+            
+            #Calculate error for both
+            error_prot = normal - sim_prot
+            error_deut = normal - sim_deut
+
+            #Average the error (The Universal "Red-Green" Error)
+            error = (error_prot + error_deut) / 2.0
+        
+        else:
+            simulated = self.simulate_cvd(image, deficiency_type).astype(np.float32) / 255.0
+            error = normal - simulated
+        
         correction = normal + error * self.correction_strength.get()
         correction = np.clip(correction, 0, 1)
         return (correction * 255).astype(np.uint8)
@@ -185,7 +204,14 @@ class CVDSimulatorGUI:
             cvd_type = self.cvd_type.get()
             
             # Processing pipeline
-            simulated = self.simulate_cvd(self.original_image, cvd_type)
+            # Simulated CVD image
+            if cvd_type == "universal":
+                # For universal, show the average of protanopia + deuteranopia simulation
+                sim_prot = self.simulate_cvd(self.original_image, "protanopia")
+                sim_deut = self.simulate_cvd(self.original_image, "deuteranopia")
+                simulated = ((sim_prot.astype(np.float32) + sim_deut.astype(np.float32)) / 2).astype(np.uint8)
+            else:
+                simulated = self.simulate_cvd(self.original_image, cvd_type)
             corrected = self.daltonize(self.original_image, cvd_type)
             enhanced = self.enhance_contrast(corrected)
             filtered = self.apply_median_filter(enhanced)
@@ -196,7 +222,11 @@ class CVDSimulatorGUI:
             self.display_image(filtered, 'enhanced_and_filtered')
             
             # Update frame title to show current CVD type
-            self.image_frames['simulated_cvd'].config(text=f'Simulated {cvd_type.capitalize()}')
+            if cvd_type == "universal":
+                self.image_frames['simulated_cvd'].config(text="Simulated (Prot+Deut Mix)")
+            else:
+                self.image_frames['simulated_cvd'].config(text=f"Simulated {cvd_type.capitalize()}")
+
             
             # Compute and display statistics
             original_stats = self.compute_statistics(self.original_image, "Original Image")
